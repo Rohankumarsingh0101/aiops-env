@@ -1,88 +1,148 @@
-# Autonomous Incident Commander (AIOps Environment)
+# 🚨 Autonomous Incident Commander (AIOps Environment)
 
-A production-grade, multi-step, agent-agnostic simulation where an AI agent acts as an on-call Site Reliability Engineer (SRE) handling production incidents across a distributed system.
+A production-grade **OpenEnv-compatible reinforcement learning environment** where an AI agent acts as an on-call **Site Reliability Engineer (SRE)** to diagnose and resolve production incidents in a distributed system.
 
-This project implements an **OpenEnv-compatible interface** using a **FastAPI** backend, fully containerized with **Docker**, designed to benchmark autonomous agents on realistic infrastructure troubleshooting scenarios.
-
----
-
-## 🚀 Features
-
-* **OpenEnv API Compatibility:** Standardized `reset()`, `step()`, and `state()` endpoints.
-* **Partial Observability:** Agents receive service metrics (CPU, Memory, Errors) and system logs, but the actual "root cause" of the outage (e.g., `memory_leak`, `db_connection_pool_exhausted`) is hidden from the observation state.
-* **Cascading Failures:** If an incident goes unresolved, system health degrades naturally (e.g., Auth service errors will cascade and trigger Payments service errors).
-* **Deterministic Reward Engine:** Agents are penalized for time elapsed (-0.05/step) and for making costly or incorrect decisions (-0.2 to -0.3). Correct analytical and mitigation actions are rewarded, clamped between `0.0` and `1.0`.
-* **Built-in Grader:** Evaluates a full incident trajectory, scoring the agent on success rate, steps taken, and action efficiency.
-* **Three Included Difficulty Levels:** `easy` (CPU Spike), `medium` (Memory Leak), and `hard` (Misleading logs with a buried database issue).
+This environment simulates real-world infrastructure failures with deterministic transitions, multi-step reasoning, and reward-based evaluation.
 
 ---
 
-## 🛠 Tech Stack
+# 🎯 Objective
 
-* **Language:** Python 3.10
-* **Framework:** FastAPI
-* **Validation:** Pydantic V2
-* **Server:** Uvicorn
-* **Infrastructure:** Docker
+The agent must:
 
----
-
-## 📦 Installation & Usage
-
-### 🐳 Option 1: Using Docker (Recommended)
-This project includes a fully configured Dockerfile to ensure seamless execution.
-
-1. Build the Docker image:
-   ```bash
-   docker build -t aiops_env .
-   ```
-2. Run the Docker container:
-   ```bash
-   docker run --rm -p 7860:7860 --name aiops_api aiops_env
-   ```
-
-### 🐍 Option 2: Running Locally natively
-1. Create a virtual environment and activate it.
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Boot up the Uvicorn server:
-   ```bash
-   uvicorn main:app --host 0.0.0.0 --port 7860
-   ```
+* Identify the **most critical failing service**
+* Apply appropriate actions
+* Restore the system to a **healthy state**
+* Optimize for **efficiency and correctness**
 
 ---
 
-## 📡 API Endpoints 
+# 🧠 Key Features
 
-Interactive Swagger docs are available automatically at `http://localhost:7860/docs` while the server is running.
+## ✅ OpenEnv Compliance
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/tasks` | `GET` | Retrieve a list of available incident tasks (`easy`, `medium`, `hard`). |
-| `/state` | `GET` | Get the internal state of the environment (Admin/Debug only). |
-| `/reset` | `POST` | Initializes an incident task. Accepts `{"task_id": "..."}`. Returns the initial `Observation`. |
-| `/step` | `POST` | Execute an action in the environment. Accepts `action_type` and `target_service`. Returns the updated `Observation`, the `reward`, and a `done` flag. |
-| `/grader` | `POST` | Submits an agent's `trajectory` to be evaluated for a final efficiency score. |
-| `/baseline` | `GET` | Triggers the built-in heuristic agent to solve all tasks and print the benchmarks. |
+* `POST /reset`
+* `POST /step`
+* `GET /state`
 
 ---
 
-## 🤖 The Action Space (Agents)
+## ✅ Deterministic Environment
 
-When calling `POST /step`, agents must specify an `action_type` and a `target_service`. 
+* No randomness
+* Same input → same output
+* Fully reproducible results
 
-**Target Services:** `auth`, `payments`, `search`  
+---
 
-**Available Actions:**
-* `restart_service`: Quickly drops load and fixes simple spikes, but fails to fix underlying database issues.
-* `scale_up`: Buys time and reduces immediate load, but at a high cost penalty.
-* `run_diagnostics`: Provides targeted log hints for a specific service.
-* `ignore`: Does nothing. The system will continue to degrade.
-* `escalate`: High cost penalty. Pings L3 support and auto-resolves the incident.
+## ✅ Multi-Step Decision Making
 
-**Example Step Payload:**
+* Requires **2–3 steps** to resolve incidents
+* Prevents trivial one-step solutions
+
+---
+
+## ✅ Partial Observability
+
+* Agent sees:
+
+  * CPU, Memory, Errors
+  * Logs
+* Root cause is hidden
+
+---
+
+## ✅ Reward System (0.05 → 1.0)
+
+Reward is based on:
+
+* System health (CPU + errors)
+* Progress improvement
+* Correct prioritization
+* Penalties for:
+
+  * wrong actions
+  * unnecessary steps
+
+---
+
+## ✅ Difficulty Levels
+
+| Task      | Description                     |
+| --------- | ------------------------------- |
+| 🟢 Easy   | Single service degradation      |
+| 🟡 Medium | Multiple services degraded      |
+| 🔴 Hard   | High-severity cascading failure |
+
+---
+
+# ⚙️ Tech Stack
+
+* Python 3.10
+* FastAPI
+* Pydantic
+* Uvicorn
+* Docker
+
+---
+
+# 🚀 Installation
+
+## 🐳 Docker (Recommended)
+
+```bash
+docker build -t aiops_env .
+docker run --rm -p 7860:7860 aiops_env
+```
+
+---
+
+## 🐍 Local Setup
+
+```bash
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 7860
+```
+
+---
+
+# 📡 API Endpoints
+
+| Endpoint    | Method | Description            |
+| ----------- | ------ | ---------------------- |
+| `/reset`    | POST   | Initialize environment |
+| `/step`     | POST   | Execute action         |
+| `/state`    | GET    | Debug state            |
+| `/tasks`    | GET    | Available tasks        |
+| `/grader`   | POST   | Evaluate trajectory    |
+| `/baseline` | GET    | Run baseline agent     |
+
+---
+
+# 🤖 Action Space
+
+## Services
+
+* `auth`
+* `payments`
+* `search`
+
+---
+
+## Actions
+
+| Action            | Description               |
+| ----------------- | ------------------------- |
+| `restart_service` | Fixes service issues      |
+| `scale_up`        | Reduces load              |
+| `run_diagnostics` | Provides insight (no fix) |
+| `ignore`          | No action                 |
+| `escalate`        | Partial fix + penalty     |
+
+---
+
+## Example
+
 ```json
 {
   "action_type": "scale_up",
@@ -92,10 +152,97 @@ When calling `POST /step`, agents must specify an `action_type` and a `target_se
 
 ---
 
-## 🗂 Project Structure
+# 📊 Observation Space
 
-* `main.py` - FastAPI application configuration and REST endpoints.
-* `env.py` - Core environment logic handling `reset`, `step` observation parsing, cascading failures, and reward distribution.
-* `models.py` - Pydantic definitions for Type Safety and Schema representation.
-* `tasks.py` - The initialization states for the `easy`, `medium`, and `hard` environments.
-* `grader.py` - Evaluation logic to assess an agent's completion trajectory.
+Each step returns:
+
+```json
+{
+  "services": {
+    "service_name": {
+      "status": "healthy | degraded",
+      "metrics": {
+        "cpu": int,
+        "memory": int,
+        "errors": int
+      }
+    }
+  },
+  "logs": [],
+  "severity": int,
+  "time_elapsed": int
+}
+```
+
+---
+
+# 🧮 Reward Logic
+
+```text
+reward = health_score + progress_bonus
+```
+
+* Range: **0.05 → 1.0**
+* Penalizes:
+
+  * wrong service targeting
+  * unnecessary actions
+* Rewards:
+
+  * fixing critical services
+  * efficient resolution
+
+---
+
+# 🏁 Episode Termination
+
+Episode ends when:
+
+* ✅ All services are healthy
+  OR
+* ⏱ max steps reached
+
+---
+
+# 🧪 Testing
+
+See full testing scenarios in:
+
+👉 **TESTING.md**
+
+---
+
+# 📁 Project Structure
+
+* `main.py` → API routes
+* `env.py` → environment logic
+* `models.py` → schemas
+* `tasks.py` → scenarios
+* `grader.py` → evaluation
+
+---
+
+# 🧠 Baseline Agent
+
+Run:
+
+```bash
+GET /baseline
+```
+
+* Demonstrates deterministic solving
+* Produces reproducible scores
+
+---
+
+# 🏆 Summary
+
+This environment evaluates an agent’s ability to:
+
+* prioritize critical failures
+* reason across multiple steps
+* optimize decisions under constraints
+
+It is designed for **real-world AIOps simulation and agent benchmarking**.
+
+---

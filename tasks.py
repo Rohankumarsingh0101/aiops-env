@@ -37,8 +37,8 @@ def get_task_medium() -> EnvState:
                 root_cause="memory_leak"
             ),
             ServiceName.payments: ServiceState(
-                status=ServiceStatus.healthy,
-                metrics=ServiceMetrics(cpu=40.0, memory=40.0, errors=5),
+                status=ServiceStatus.degraded,
+                metrics=ServiceMetrics(cpu=80.0, memory=50.0, errors=50),
             ),
             ServiceName.search: ServiceState(
                 status=ServiceStatus.healthy,
