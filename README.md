@@ -1,8 +1,7 @@
 ---
-
 sdk: docker
 app_port: 7860
---------------
+---
 
 🚨 Autonomous Incident Commander (AIOps Environment)
 
