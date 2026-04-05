@@ -9,6 +9,12 @@ app_port: 7860
 
 A **production-grade, OpenEnv-compatible reinforcement learning environment** where an AI agent acts as an on-call **Site Reliability Engineer (SRE)** to diagnose and resolve production incidents in a distributed system.
 
+## 🔗 Quick Links
+
+* Live App: https://rs01019989-aiops.hf.space/
+* API Docs: https://rs01019989-aiops.hf.space/docs
+* Health Check: https://rs01019989-aiops.hf.space/health
+
 ---
 
 ## 🎯 What This Environment Simulates
@@ -31,6 +37,10 @@ Most AIOps benchmarks rely on synthetic data with no causal structure. This envi
 - Requires **multi-step reasoning** (no single-step solutions)
 - Implements **realistic cascading failures** (auth degradation flows into payments)
 - Produces **rich signals** for training or evaluating diagnostic LLMs and RL agents
+
+## Why This Environment Is Challenging
+
+This environment includes deceptive signals, cascading failures, and partial recovery effects. Agents must reason across multiple steps rather than applying greedy fixes, making it a realistic simulation of production incident response.
 
 ---
 
@@ -87,12 +97,42 @@ uvicorn main:app --host 0.0.0.0 --port 7860
 | `ignore`            | No action taken — small penalty                  |
 | `escalate`          | Partial error/CPU relief — significant penalty   |
 
-### Example Action Payload
+## Example API Usage
 
+### Reset
+```json
+POST /reset
+{
+  "task_id": "easy"
+}
+```
+
+### Step
+```json
+POST /step
+{
+  "action_type": "scale_up",
+  "target_service": "search"
+}
+```
+
+### Example Response
 ```json
 {
-  "action_type": "restart_service",
-  "target_service": "auth"
+  "observation": {
+    "services": {
+      "search": {
+        "status": "healthy",
+        "metrics": {"cpu": 40.0, "memory": 60.0, "errors": 0}
+      }
+    },
+    ...
+  },
+  "reward": 0.53,
+  "done": false,
+  "info": {
+    "action_correct": true
+  }
 }
 ```
 
@@ -130,7 +170,7 @@ reward = min(health_score + progress_bonus, 0.95)
 - **Penalties**:
   - Targeting wrong service: `-0.10`
   - `run_diagnostics`: `-0.05`
-  - `ignore`: `-0.05`
+  - `ignore`: `-0.10`
   - `escalate`: `-0.20`
   - Failing to resolve by max_steps: `-0.20`
 - **Perfect bonus**: `reward = 1.0` if system is fully resolved in exactly 2 correct steps

@@ -147,11 +147,17 @@ def dashboard():
     if not state:
         html = """
         <html><head><title>AIOps Dashboard</title>
-        <style>body{font-family:monospace;background:#0f0f0f;color:#eee;padding:2rem;}</style>
+        <meta http-equiv="refresh" content="5">
+        <style>body{font-family:monospace;background:#0f0f0f;color:#eee;padding:2rem;} h1{color:#f97316;} a{color:#4af;}</style>
         </head><body>
-        <h1>🚨 AIOps Incident Commander</h1>
-        <p style="color:#aaa">No active episode. Call <code>POST /reset</code> to initialize.</p>
-        <p><a href="/docs" style="color:#4af">→ Open API Docs</a></p>
+        <h1>AIOps Incident Commander</h1>
+        <p style="color:#aaa">No active episode.</p>
+        <p><b>Quick Start:</b></p>
+        <ol>
+            <li><code>POST /reset</code> &rarr; <code>{"task_id": "easy" | "medium" | "hard"}</code></li>
+            <li><code>POST /step</code>  &rarr; <code>{"action_type": "...", "target_service": "..."}</code></li>
+        </ol>
+        <p>Or use the <a href="/docs">API Docs</a> below.</p>
         </body></html>
         """
         return HTMLResponse(content=html)
