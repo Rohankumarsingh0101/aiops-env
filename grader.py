@@ -60,11 +60,7 @@ def grade(task_id: str, trajectory: List[Dict[str, Any]]) -> float:
         elif action_type == ActionType.ignore.value:
             efficiency_score -= 0.05
             
-        # Penalize if action was completely wrong (reward clumped to 0 by env clamp)
-        reward = step.get("response", {}).get("reward", 0.0)
-        if reward == 0.0:
-            efficiency_score -= 0.02
-            
+
     efficiency_score = max(0.0, efficiency_score)
     score += efficiency_score
     

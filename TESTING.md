@@ -1,166 +1,192 @@
 # 🧪 TESTING GUIDE — AIOps Environment
 
-This document validates deterministic behavior, reward shaping, and multi-step reasoning.
+Deterministic test cases for all scenarios. All expected values assume a fresh `/reset` before each test.
 
 ---
 
-# 🟢 EASY
+## 🟢 EASY — CPU Spike on Search
 
-## Reset
-
+### Reset
 ```json
-{ "task_id": "easy" }
+POST /reset   { "task_id": "easy" }
 ```
-
-### Expected
-
-* search degraded (errors ~50)
+**Expected:**
+- `search` status = `degraded`, cpu = 95, errors = 50
+- `auth` and `payments` status = `healthy`
+- logs contains "High CPU usage detected on search service"
 
 ---
 
-## Step 1
-
+### Step 1 — scale_up (correct, resolves cpu_spike)
 ```json
-{ "action_type": "scale_up", "target_service": "search" }
+POST /step   { "action_type": "scale_up", "target_service": "search" }
 ```
-
-Expected:
-
-* reward ≈ 0.5–0.6
-* done = false
+**Expected:**
+- `search` status → `healthy`, cpu = 40, errors = 0
+- reward ≈ 0.9–1.0 (optimal path possible in next step)
+- done = false (only 1 step elapsed, minimum is 2)
 
 ---
 
-## Step 2 (wrong)
-
+### Step 2 — ignore (wrong, penalty)
 ```json
-{ "action_type": "ignore", "target_service": "auth" }
+POST /step   { "action_type": "ignore", "target_service": "auth" }
 ```
-
-Expected:
-
-* warning log
-* reward decreases
-* done = false
+**Expected:**
+- reward decreases due to wrong-service and ignore penalties
+- warning log: "Targeted auth, but search is more critical" (or similar)
+- done = true (step 2 reached with all healthy — min threshold met)
 
 ---
 
-## Step 3 (correct)
+### Optimal path
+```
+reset → scale_up search → restart_service search
+```
+- reward = 1.0 if system healthy at step 2 with correct sequence
 
+---
+
+## 🟡 MEDIUM — Memory Leak + Cascade
+
+### Reset
 ```json
-{ "action_type": "restart_service", "target_service": "search" }
+POST /reset   { "task_id": "medium" }
 ```
-
-Expected:
-
-* errors = 0
-* done = true
-* reward ≈ 0.9–1.0
+**Expected:**
+- `auth` degraded (memory=98, errors=100), root_cause=memory_leak
+- `payments` degraded (cpu=80, errors=50)
+- `search` healthy
 
 ---
 
-# 🟡 MEDIUM
-
-## Reset
-
+### Step 1 — restart auth (correct)
 ```json
-{ "task_id": "medium" }
+POST /step   { "action_type": "restart_service", "target_service": "auth" }
 ```
-
-Expected:
-
-* auth + payments degraded
+**Expected:**
+- `auth` → healthy, errors=0, memory normalized
+- reward ≈ 0.5–0.7
+- done = false
 
 ---
 
-## Step 1
-
+### Step 2 — restart payments (correct)
 ```json
-{ "action_type": "restart_service", "target_service": "auth" }
+POST /step   { "action_type": "restart_service", "target_service": "payments" }
 ```
-
-Expected:
-
-* reward ≈ 0.6
-* done = false
+**Expected:**
+- all services healthy, errors = 0
+- done = true
+- reward = 1.0 (optimal 2-step correct sequence)
 
 ---
 
-## Step 2
+## 🔴 HARD — Deceptive Cascade (DB Pool Exhaustion on Auth)
 
+### Reset
 ```json
-{ "action_type": "restart_service", "target_service": "payments" }
+POST /reset   { "task_id": "hard" }
 ```
-
-Expected:
-
-* all healthy
-* done = true
-* reward ≈ 0.9–1.0
+**Expected:**
+- `payments` degraded (cpu=90, errors=500) — appears most critical
+- `auth` appears healthy but has hidden root_cause=db_connection_pool_exhausted
+- logs mention payments SLA breach and occasional DB drops
 
 ---
 
-# 🔴 HARD
-
-## Reset
-
+### Step 1 — scale_up payments (deceptive — CPU drops but errors persist)
 ```json
-{ "task_id": "hard" }
+POST /step   { "action_type": "scale_up", "target_service": "payments" }
 ```
-
-Expected:
-
-* payments heavily degraded (errors ~500)
+**Expected:**
+- `payments` cpu drops ~40 points
+- `payments` errors remain high (no root_cause to fix)
+- log: "CPU reduced but errors persisting"
+- reward low (~0.2–0.4)
+- done = false
 
 ---
 
-## Step 1 (wrong)
-
+### Step 2 — run_diagnostics auth (reveals hidden cause)
 ```json
-{ "action_type": "restart_service", "target_service": "auth" }
+POST /step   { "action_type": "run_diagnostics", "target_service": "auth" }
 ```
-
-Expected:
-
-* reward ≈ 0.05
-* done = false
+**Expected:**
+- log: "100% DB connections active. Pool exhausted."
+- reward decreases slightly (diagnostics penalty)
+- done = false
 
 ---
 
-## Step 2 (correct)
-
+### Step 3 — restart auth (resolves actual root cause)
 ```json
-{ "action_type": "restart_service", "target_service": "payments" }
+POST /step   { "action_type": "restart_service", "target_service": "auth" }
+```
+**Expected:**
+- `auth` root_cause cleared
+- cascaded errors on payments clear
+- done = true
+- reward ≈ 0.7–0.9
+
+---
+
+## 🔁 DETERMINISM TEST
+
+Run the same sequence twice without restarting the server:
+
+**Run A:**
+```
+POST /reset {"task_id":"easy"}
+POST /step  {"action_type":"scale_up","target_service":"search"}
 ```
 
-Expected:
-
-* system healthy
-* reward ≈ 0.9–0.95
-* done = true
-
----
-
-# 🔁 DETERMINISM TEST
-
-Repeat:
-
-```text
-reset → step → step
+**Run B (immediately after):**
+```
+POST /reset {"task_id":"easy"}
+POST /step  {"action_type":"scale_up","target_service":"search"}
 ```
 
-Expected:
-
-* identical output each run
+**Expected:** Identical rewards, observations, logs across both runs.
 
 ---
 
-# ✅ SUCCESS CRITERIA
+## ❌ INVALID INPUT HANDLING
 
-* deterministic outputs
-* reward range [0.05, 1.0]
-* multi-step resolution
-* correct prioritization
-* valid termination conditions
+### Unknown task_id
+```json
+POST /reset   { "task_id": "extreme" }
+```
+**Expected:** HTTP 400 with message about valid tasks.
+
+### Missing action field
+```json
+POST /step   { "target_service": "auth" }
+```
+**Expected:** HTTP 422 Unprocessable Entity (Pydantic validation error).
+
+### Unknown service name
+```json
+POST /step   { "action_type": "restart_service", "target_service": "database" }
+```
+**Expected:** HTTP 422 Unprocessable Entity (Enum validation error).
+
+### Step before reset
+```json
+POST /step   { "action_type": "restart_service", "target_service": "auth" }
+```
+*(on fresh startup, before any /reset)*  
+**Expected:** HTTP 400 — "Environment not initialized. Call /reset first."
 
 ---
+
+## ✅ SUCCESS CRITERIA
+
+| Criterion                         | Requirement                          |
+| --------------------------------- | ------------------------------------ |
+| Deterministic outputs             | Same input → same output, always     |
+| Reward range                      | Always within [0.05, 1.0]           |
+| Multi-step resolution             | `done=true` only after ≥2 steps      |
+| Critical service logged           | Every step response includes `"Critical service: <name>"` |
+| Correct prioritization rewarded   | Targeting highest-error service → positive signal |
+| Valid termination                 | `done=true` only when healthy or max_steps hit |

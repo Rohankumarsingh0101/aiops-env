@@ -1,7 +1,7 @@
 from models import EnvState, ServiceState, ServiceMetrics, ServiceStatus, ServiceName
 
 def get_task_easy() -> EnvState:
-    # CPU spike in one service
+    # Single service CPU spike — clear root cause, straightforward resolution
     return EnvState(
         task_id="easy",
         services={
@@ -23,11 +23,11 @@ def get_task_easy() -> EnvState:
         time_elapsed=0,
         steps_taken=0,
         resolved=False,
-        logs=["High CPU usage detected on search service"]
+        logs=["High CPU usage detected on search service. Errors elevated."]
     )
 
 def get_task_medium() -> EnvState:
-    # Memory leak requiring diagnostics + restart
+    # Auth memory leak causing cascade into payments — requires two targeted restarts
     return EnvState(
         task_id="medium",
         services={
@@ -49,22 +49,28 @@ def get_task_medium() -> EnvState:
         time_elapsed=0,
         steps_taken=0,
         resolved=False,
-        logs=["Latency increased on auth service. Container memory usage critical."]
+        logs=[
+            "Latency spike on auth service. Memory usage critical.",
+            "Payments reporting elevated error rate. Possible cascade."
+        ]
     )
 
 def get_task_hard() -> EnvState:
-    # Cascading multi-service failure with misleading logs
+    # Deceptive scenario: payments looks worst but auth holds the real root cause.
+    # scale_up on payments reduces CPU but errors stay high (misleading partial improvement).
+    # Agent must trace the hidden db_connection_pool_exhausted on auth to fully recover.
     return EnvState(
         task_id="hard",
         services={
             ServiceName.auth: ServiceState(
-                status=ServiceStatus.healthy,
-                metrics=ServiceMetrics(cpu=40.0, memory=50.0, errors=10),
-                root_cause="db_connection_pool_exhausted" # The real root cause is buried
+                status=ServiceStatus.healthy,    # Misleadingly appears healthy
+                metrics=ServiceMetrics(cpu=40.0, memory=50.0, errors=0),
+                root_cause="db_connection_pool_exhausted"  # Hidden root cause
             ),
             ServiceName.payments: ServiceState(
                 status=ServiceStatus.degraded,
                 metrics=ServiceMetrics(cpu=90.0, memory=80.0, errors=500),
+                # No root cause — it is a victim of the auth cascade
             ),
             ServiceName.search: ServiceState(
                 status=ServiceStatus.healthy,
@@ -78,7 +84,8 @@ def get_task_hard() -> EnvState:
         logs=[
             "Multiple HTTP 500 errors on payments API.",
             "Alert: Payments service SLA breached.",
-            "Database connections occasionally dropping."
+            "Database connections occasionally dropping.",
+            "Note: Auth service metrics appear nominal — investigate further."
         ]
     )
 

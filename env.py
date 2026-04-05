@@ -23,11 +23,13 @@ def calculate_health_score(state: EnvState) -> float:
     
     return max(0.0, min(1.0, health_score))
 
-def is_system_healthy(state: EnvState) -> bool:
-    for s in state.services.values():
-        if s.status != ServiceStatus.healthy or s.root_cause is not None:
-            return False
-    return True
+
+def get_critical_service(state: EnvState) -> str:
+    """Returns the name of the service with the highest error count."""
+    return max(
+        state.services,
+        key=lambda s: state.services[s].metrics.errors
+    ).value
 
 def apply_action(state: EnvState, action: Action) -> list[str]:
     target = state.services[action.target_service]
@@ -58,15 +60,17 @@ def apply_action(state: EnvState, action: Action) -> list[str]:
             target.metrics.cpu = 40.0
             new_logs.append(f"Scaled up {action.target_service}. CPU load normalized.")
         else:
+            # Partial CPU relief but errors remain — deceptive improvement
             target.metrics.cpu = max(20.0, target.metrics.cpu - 50.0)
-            new_logs.append(f"Scaled up {action.target_service}. Temporary relief.")
+            new_logs.append(f"Scaled up {action.target_service}. CPU reduced but errors persisting.")
             
     elif action.action_type == ActionType.run_diagnostics:
+        # Diagnostics never fix anything — only provide insight
         if target.root_cause:
             if target.root_cause == "cpu_spike":
-                new_logs.append(f"Diagnostics on {action.target_service}: CPU usage anomalous.")
+                new_logs.append(f"Diagnostics on {action.target_service}: CPU usage anomalous. Possible cpu_spike.")
             elif target.root_cause == "memory_leak":
-                new_logs.append(f"Diagnostics on {action.target_service}: Memory footprint growing linearly. Suggests leak.")
+                new_logs.append(f"Diagnostics on {action.target_service}: Memory footprint growing linearly. Suggests memory_leak.")
             elif target.root_cause == "db_connection_pool_exhausted":
                 new_logs.append(f"Diagnostics on {action.target_service}: 100% DB connections active. Pool exhausted.")
         else:
@@ -83,14 +87,16 @@ def apply_action(state: EnvState, action: Action) -> list[str]:
                 new_logs.append(f"Diagnostics on {action.target_service}: Service functioning within normal parameters.")
 
     elif action.action_type == ActionType.ignore:
-        new_logs.append(f"Ignored alerts on {action.target_service}.")
+        new_logs.append(f"Ignored alerts on {action.target_service}. No action taken.")
 
     elif action.action_type == ActionType.escalate:
-        target.metrics.errors = int(target.metrics.errors * 0.3)
-        target.metrics.cpu = int(target.metrics.cpu * 0.7)
-        new_logs.append(f"Escalated incident to L3 for {action.target_service}. Partial relief.")
+        # Partial relief only — NOT full recovery
+        target.metrics.errors = max(0, int(target.metrics.errors * 0.5))
+        target.metrics.cpu = max(20.0, target.metrics.cpu * 0.7)
+        new_logs.append(f"Escalated incident to L3 for {action.target_service}. Partial relief applied, monitoring continues.")
 
     return new_logs
+
 
 class CommanderEnv:
     def __init__(self):
@@ -101,9 +107,8 @@ class CommanderEnv:
     def reset(self, task_id: str) -> Observation:
         task_id = task_id.strip().lower()
         if task_id not in TASKS:
-            raise ValueError(f"Task {task_id} not found")
+            raise ValueError(f"Task '{task_id}' not found. Valid tasks: {list(TASKS.keys())}")
         
-        # Deep copy to ensure we don't modify the original task definition
         self.state_data = copy.deepcopy(TASKS[task_id]())
         self.state_data.time_elapsed = 0
         self._action_correct_sequence = True
@@ -119,7 +124,7 @@ class CommanderEnv:
                 "status": s_state.status.value,
                 "metrics": s_state.metrics.model_dump()
             }
-        
+
         return Observation(
             services=obs_services,
             logs=self.state_data.logs.copy(),
@@ -134,18 +139,15 @@ class CommanderEnv:
             raise RuntimeError("Episode finished, please reset environment")
             
         action = Action(**action_dict)
-        target = self.state_data.services[action.target_service]
         
         previous_errors = sum(s.metrics.errors for s in self.state_data.services.values())
         
-        most_critical_service = max(
-            self.state_data.services,
-            key=lambda s: self.state_data.services[s].metrics.errors
-        ).value
+        # Identify the critical service BEFORE taking action
+        most_critical_service = get_critical_service(self.state_data)
         
         new_logs = apply_action(self.state_data, action)
             
-        # Cascading failures and degradation
+        # Cascading failures: services with root_cause still active get worse
         for s_name, s in self.state_data.services.items():
             if s.root_cause:
                 s.metrics.cpu = min(100.0, s.metrics.cpu + 15.0)
@@ -163,7 +165,7 @@ class CommanderEnv:
             pay.metrics.errors += auth.metrics.errors // 2
             if pay.metrics.errors > 50:
                 pay.status = ServiceStatus.degraded
-                new_logs.append("Warning: Initial cascade detected from Auth to Payments.")
+                new_logs.append("Warning: Cascade detected from Auth to Payments.")
 
         # Update severity
         degraded = sum(1 for s in self.state_data.services.values() if s.status != ServiceStatus.healthy)
@@ -175,38 +177,54 @@ class CommanderEnv:
         health_score = calculate_health_score(self.state_data)
         reward = min(health_score + progress_bonus, 0.95)
         
-        if action.target_service != most_critical_service:
+        # Penalize targeting wrong service
+        if action.target_service.value != most_critical_service:
             reward -= 0.1
             self._action_correct_sequence = False
-            new_logs.append(f"Warning: Targeted {action.target_service}, but {most_critical_service} is more critical.")
+            new_logs.append(f"Warning: Targeted {action.target_service.value}, but {most_critical_service} is more critical.")
         else:
             new_logs.append(f"Progress: Targeted critical service {most_critical_service}.")
-            
+
+        # Action type penalties
         if action.action_type == ActionType.escalate:
             reward -= 0.2
         elif action.action_type == ActionType.run_diagnostics:
+            # Diagnostics NEVER increase reward
             reward -= 0.05
             self._action_correct_sequence = False
-            
-        self.state_data.logs = new_logs
+        elif action.action_type == ActionType.ignore:
+            reward -= 0.05
+            self._action_correct_sequence = False
+
         self.state_data.time_elapsed += 1
         
+        # Update statuses based on resolved errors
         for s in self.state_data.services.values():
-            if s.metrics.errors == 0:
+            if s.metrics.errors == 0 and s.root_cause is None:
                 s.status = ServiceStatus.healthy
                 
-        is_system_healthy_check = all(s.metrics.errors == 0 for s in self.state_data.services.values())
-        
+        is_system_healthy_check = all(
+            s.metrics.errors == 0 and s.root_cause is None
+            for s in self.state_data.services.values()
+        )
+
+        # Emit critical service signal in logs
+        critical_svc = get_critical_service(self.state_data)
+        new_logs.append(f"Critical service: {critical_svc}")
+        self.state_data.logs = new_logs
+
+        # Done logic — minimum 2 steps before healthy resolution
         if is_system_healthy_check and self.state_data.time_elapsed >= 2:
             done = True
             self.state_data.resolved = True
         elif self.state_data.time_elapsed >= self.max_steps:
             done = True
             if not is_system_healthy_check:
-                reward -= 0.2
+                reward -= 0.2  # Penalty for not resolving within max steps
         else:
             done = False
             
+        # Bonus: perfect resolution in exactly 2 steps with correct sequence
         optimal_path = (self.state_data.time_elapsed == 2 and self._action_correct_sequence)
         
         if done and is_system_healthy_check and optimal_path:
@@ -216,7 +234,11 @@ class CommanderEnv:
             
         return StepResponse(
             observation=self._get_observation(),
-            reward=reward,
+            reward=round(reward, 4),
             done=done,
-            info={"action_correct": (action.target_service == most_critical_service)}
+            info={
+                "action_correct": (action.target_service.value == most_critical_service),
+                "critical_service": critical_svc,
+                "optimal": (reward == 1.0)
+            }
         )
