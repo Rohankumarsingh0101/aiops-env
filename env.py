@@ -32,16 +32,16 @@ def get_critical_service(state: EnvState) -> str:
     ).value
 
 def suggest_action(service: ServiceState) -> str:
-    if service.metrics.cpu > 85:
-        return ActionType.scale_up.value
-    if service.metrics.memory > 90:
-        return ActionType.restart_service.value
     if service.metrics.errors > 100:
-        return ActionType.escalate.value
+        return f"{ActionType.escalate.value} (Errors {service.metrics.errors} exceeds threshold)"
+    if service.metrics.memory > 90:
+        return f"{ActionType.restart_service.value} (Memory {service.metrics.memory}% exceeds threshold)"
+    if service.metrics.cpu > 85:
+        return f"{ActionType.scale_up.value} (CPU {service.metrics.cpu}% exceeds threshold)"
     return ActionType.run_diagnostics.value
 
 def validate_action(action: Action, state: EnvState) -> None:
-    if action.target_service not in state.services:
+    if action.target_service.value not in state.services:
         raise ValueError(f"Service {action.target_service} not found in state.")
 
 def apply_action(state: EnvState, action: Action) -> list[str]:
@@ -146,13 +146,12 @@ class CommanderEnv:
             time_elapsed=self.state_data.time_elapsed
         )
 
-    def step(self, action_dict: dict) -> StepResponse:
+    def step(self, action: Action) -> StepResponse:
         if not self.state_data:
             raise RuntimeError("Environment must be reset before stepping")
         if self.state_data.time_elapsed >= self.max_steps:
             raise RuntimeError("Episode finished, please reset environment")
             
-        action = Action(**action_dict)
         validate_action(action, self.state_data)
         
         previous_errors = sum(s.metrics.errors for s in self.state_data.services.values())

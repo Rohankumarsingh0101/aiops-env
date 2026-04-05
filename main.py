@@ -41,7 +41,7 @@ def reset_env(request: ResetRequest):
 @app.post("/step", response_model=StepResponse)
 def step_env(action: Action):
     try:
-        response = env.step(action.model_dump())
+        response = env.step(action)
         return response
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -113,7 +113,7 @@ def run_baseline():
             step_num = len(trajectory) + 1
             print(f"  Step {step_num} -> {action_type} on {target_service}")
 
-            response = env.step(action_dict)
+            response = env.step(Action(**action_dict))
             trajectory.append({
                 "action": action_dict,
                 "response": response.model_dump()
