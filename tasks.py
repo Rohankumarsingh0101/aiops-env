@@ -7,11 +7,11 @@ def get_task_easy() -> EnvState:
         services={
             ServiceName.auth: ServiceState(
                 status=ServiceStatus.healthy,
-                metrics=ServiceMetrics(cpu=40.0, memory=50.0, errors=5),
+                metrics=ServiceMetrics(cpu=40.0, memory=50.0, errors=0),
             ),
             ServiceName.payments: ServiceState(
                 status=ServiceStatus.healthy,
-                metrics=ServiceMetrics(cpu=30.0, memory=40.0, errors=2),
+                metrics=ServiceMetrics(cpu=30.0, memory=40.0, errors=0),
             ),
             ServiceName.search: ServiceState(
                 status=ServiceStatus.degraded,
