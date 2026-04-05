@@ -23,7 +23,7 @@ def get_task_easy() -> EnvState:
         time_elapsed=0,
         steps_taken=0,
         resolved=False,
-        logs=["High CPU usage detected on search service. Errors elevated."]
+        logs=["Search CPU at 95% \u2014 likely scaling bottleneck"]
     )
 
 def get_task_medium() -> EnvState:
@@ -50,7 +50,7 @@ def get_task_medium() -> EnvState:
         steps_taken=0,
         resolved=False,
         logs=[
-            "Latency spike on auth service. Memory usage critical.",
+            "Auth latency spike + memory 98% \u2014 possible memory leak",
             "Payments reporting elevated error rate. Possible cascade."
         ]
     )

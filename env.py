@@ -1,4 +1,4 @@
-from models import EnvState, Observation, StepResponse, Action, ActionType, ServiceName, ServiceStatus
+from models import EnvState, Observation, StepResponse, Action, ActionType, ServiceName, ServiceStatus, ServiceState
 from tasks import TASKS
 import copy
 
@@ -31,6 +31,19 @@ def get_critical_service(state: EnvState) -> str:
         key=lambda s: state.services[s].metrics.errors
     ).value
 
+def suggest_action(service: ServiceState) -> str:
+    if service.metrics.cpu > 85:
+        return ActionType.scale_up.value
+    if service.metrics.memory > 90:
+        return ActionType.restart_service.value
+    if service.metrics.errors > 100:
+        return ActionType.escalate.value
+    return ActionType.run_diagnostics.value
+
+def validate_action(action: Action, state: EnvState) -> None:
+    if action.target_service not in state.services:
+        raise ValueError(f"Service {action.target_service} not found in state.")
+
 def apply_action(state: EnvState, action: Action) -> list[str]:
     target = state.services[action.target_service]
     new_logs = []
@@ -51,7 +64,8 @@ def apply_action(state: EnvState, action: Action) -> list[str]:
                 target.metrics.errors = 0
                 new_logs.append(f"Restarted {action.target_service}. Cascaded errors cleared.")
             else:
-                new_logs.append(f"Restarted {action.target_service}. No underlying issue fixed.")
+                target.metrics.errors = int(target.metrics.errors * 0.5)
+                new_logs.append(f"Restarted {action.target_service}. Errors reduced by ~50% (not full reset).")
             
     elif action.action_type == ActionType.scale_up:
         if target.root_cause == "cpu_spike":
@@ -139,6 +153,7 @@ class CommanderEnv:
             raise RuntimeError("Episode finished, please reset environment")
             
         action = Action(**action_dict)
+        validate_action(action, self.state_data)
         
         previous_errors = sum(s.metrics.errors for s in self.state_data.services.values())
         
@@ -193,7 +208,7 @@ class CommanderEnv:
             reward -= 0.05
             self._action_correct_sequence = False
         elif action.action_type == ActionType.ignore:
-            reward -= 0.05
+            reward -= 0.1
             self._action_correct_sequence = False
 
         self.state_data.time_elapsed += 1
@@ -211,6 +226,10 @@ class CommanderEnv:
         # Emit critical service signal in logs
         critical_svc = get_critical_service(self.state_data)
         new_logs.append(f"Critical service: {critical_svc}")
+        
+        # Emit intelligence signal
+        sug_action = suggest_action(self.state_data.services[ServiceName(critical_svc)])
+        new_logs.append(f"Suggested action: {sug_action}")
         self.state_data.logs = new_logs
 
         # Done logic — minimum 2 steps before healthy resolution
