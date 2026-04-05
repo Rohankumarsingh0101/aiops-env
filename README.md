@@ -5,7 +5,6 @@ app_port: 7860
 
 🚨 Autonomous Incident Commander (AIOps Environment)
 
-
 > A deterministic AIOps reinforcement learning environment for incident response and service recovery.
 
 A **production-grade, OpenEnv-compatible reinforcement learning environment** where an AI agent acts as an on-call **Site Reliability Engineer (SRE)** to diagnose and resolve production incidents in a distributed system.
