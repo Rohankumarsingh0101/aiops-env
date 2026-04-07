@@ -1,0 +1,27 @@
+name: autonomous-incident-commander
+description: >
+  A deterministic, OpenEnv-compatible AIOps reinforcement learning environment
+  where an AI agent acts as an on-call Site Reliability Engineer (SRE) to diagnose
+  and resolve production incidents across a distributed microservices system.
+  Features cascading failures, partial observability, deceptive signals, and
+  a bounded multi-step reward function.
+version: "1.1.0"
+
+entrypoint: main.py
+
+endpoints:
+  reset: /reset
+  step: /step
+  state: /state
+
+models:
+  action: Action
+  observation: Observation
+
+metadata:
+  author: rs01019989
+  domain: AIOps / SRE / Incident Management
+  difficulty:
+    - easy
+    - medium
+    - hard
