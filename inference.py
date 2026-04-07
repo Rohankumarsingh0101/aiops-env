@@ -109,66 +109,76 @@ def llm_action(obs: dict, history: list[dict]) -> tuple[str, str]:
         for i, h in enumerate(history)
     ]
 
-    prompt = f"""You are an SRE diagnosing a production outage.
+    prompt = f"""You are an SRE diagnosing a production outage. Choose the next action to resolve it.
 
-Important:
-* The service with the most errors may NOT be the root cause.
-* Cascading failures are common in distributed systems.
-* Identify the ROOT CAUSE, not just the loudest symptom.
-* restart_service fixes: memory_leak, cpu_spike, db_connection_pool_exhausted
-* scale_up fixes: cpu_spike only
-* run_diagnostics: reveals root cause in logs, does NOT fix anything (use only once)
-* escalate: partial relief only, does NOT resolve the incident
+Rules:
+- The service with the most errors may be a DOWNSTREAM VICTIM, not the root cause
+- Cascading failures: auth issues often cause payments failures
+- restart_service: fixes memory_leak, cpu_spike, db_connection_pool_exhausted
+- scale_up: fixes cpu_spike only (reduces CPU load)
+- run_diagnostics: reveals hidden root cause — use ONLY if root cause is unclear
+- Do NOT repeat the same action twice
 
 System state:
 {chr(10).join(svc_lines)}
 
-Recent logs:
+Logs:
 {chr(10).join(f'  {l}' for l in logs[-6:])}
 
-Actions taken so far:
-{chr(10).join(history_lines) if history_lines else '  None yet'}
+Steps taken:
+{chr(10).join(history_lines) if history_lines else '  None'}
 
-Think:
-1. Which service is the root cause vs downstream victim?
-2. What is the most efficient next action?
+Reply ONLY with JSON (no explanation):
+{{"action_type": "restart_service|scale_up|run_diagnostics|escalate|ignore", "target_service": "auth|payments|search"}}"""
 
-Respond ONLY in this exact format (no explanation, no JSON):
-<action_type>/<service>
-
-Example: restart_service/auth"""
+    valid_actions  = {"restart_service", "scale_up", "run_diagnostics", "escalate", "ignore"}
+    valid_services = {"auth", "payments", "search"}
 
     try:
         resp = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
-            max_tokens=20,
+            max_tokens=50,
         )
-        text = resp.choices[0].message.content.strip().lower()
-        # Strip markdown fences, quotes, extra whitespace
-        text = text.split("\n")[0].strip("`").strip('"').strip("'").strip()
-        # Expected format: action_type/service  e.g. "restart_service/auth"
-        if "/" in text:
-            parts = text.split("/")
-            action = parts[0].strip()
-            service = parts[1].strip().split()[0]  # take first word in case of trailing text
-            valid_actions  = {"restart_service", "scale_up", "run_diagnostics", "escalate", "ignore"}
-            valid_services = {"auth", "payments", "search"}
+        text = resp.choices[0].message.content.strip()
+
+        # Stage 1: JSON parse
+        try:
+            cleaned = text
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("```")[1].lstrip("json").strip()
+            parsed  = json.loads(cleaned)
+            action  = parsed.get("action_type", "").strip()
+            service = parsed.get("target_service", "").strip()
             if action in valid_actions and service in valid_services:
                 return action, service
+        except (json.JSONDecodeError, AttributeError, KeyError):
+            pass
+
+        # Stage 2: slash format
+        clean = text.lower().split("\n")[0].strip("`").strip('"').strip("'")
+        if "/" in clean:
+            parts   = clean.split("/")
+            action  = parts[0].strip()
+            service = parts[1].strip().split()[0]
+            if action in valid_actions and service in valid_services:
+                return action, service
+
     except Exception:
         pass
 
-    # Fallback: target the degraded service with the most errors (most likely root cause)
+    # Fallback: restart the highest-error degraded service
     candidates = [
         (svc, data) for svc, data in services.items()
         if data.get("status") != "healthy"
     ]
     if candidates:
-        root_suspect = max(candidates, key=lambda x: x[1].get("metrics", {}).get("errors", 0))
-        return "restart_service", root_suspect[0]
+        top = max(candidates, key=lambda x: x[1].get("metrics", {}).get("errors", 0))
+        return "restart_service", top[0]
     return "run_diagnostics", "auth"
+
+
 
 
 
