@@ -29,14 +29,62 @@ The agent must:
 
 ---
 
-## 💡 Why This Environment Is Useful
+## 🔥 Why This Matters
 
-Most AIOps benchmarks rely on synthetic data with no causal structure. This environment:
-- Uses **deterministic, causal transitions** (same root cause → same resolution path)
-- Enforces **partial observability** (root cause is hidden — agent must reason from metrics and logs)
-- Requires **multi-step reasoning** (no single-step solutions)
-- Implements **realistic cascading failures** (auth degradation flows into payments)
-- Produces **rich signals** for training or evaluating diagnostic LLMs and RL agents
+Production systems go down. On-call engineers have minutes — not hours — to identify root causes across dozens of services, read contradictory logs, and apply the right fix in the right order.
+
+Most LLM benchmarks test knowledge recall. **This environment tests decision-making under uncertainty** — the skill that matters in real SRE work.
+
+There is currently no standard, open environment for evaluating AI agents on incident response reasoning. This fills that gap: deterministic, multi-step, causally structured, and directly mappable to real-world SRE problem patterns.
+
+---
+
+## 🧩 What Makes This Hard
+
+**1. Cascading failures.** A root cause on one service (e.g. auth DB pool exhaustion) silently degrades another (payments retry storm). The loudest symptom is never the cause.
+
+**2. Deceptive signals.** The hard task surfaces a service with high errors and high CPU — an obvious target. The actual root cause is a quieter service with normal CPU, slightly elevated memory, and a saturated DB connection pool visible only in logs.
+
+**3. Partial recovery.** Actions like `escalate` and `scale_up` reduce metrics without resolving the underlying failure. An agent that stops after a partial improvement will see `done=True` from max-steps — but `success=False`.
+
+**4. Observation cost.** `run_diagnostics` reveals the root cause but incurs a penalty. An agent must decide when insight is worth the cost versus acting directly.
+
+---
+
+## 🎓 Agent Learning Value
+
+| Skill | How This Environment Trains It |
+|---|---|
+| **Root cause analysis** | Root cause is never directly exposed — must be inferred from metrics + logs |
+| **Decision sequencing** | Order of actions matters; fixing cascade victim before root cause wastes steps |
+| **Cost-aware action selection** | Diagnostics, escalation, and wrong-service actions all carry measurable penalties |
+| **Multi-step planning** | Minimum 2 steps required; optimal path = 2–3 steps depending on task |
+
+---
+
+## 💥 Example Failure Journey (Hard Task)
+
+```
+POST /reset  {"task_id": "hard"}
+→ payments: errors=480, cpu=91%  ← loud, obvious
+→ auth: errors=30, cpu=45%       ← quiet, suspicious
+→ logs: "Connection pool saturation detected on auth DB layer"
+
+POST /step  {"action_type": "scale_up", "target_service": "payments"}
+→ payments cpu drops to 41%      ← looks like progress
+→ payments errors still 480      ← not resolved (no root cause here)
+→ reward=0.12  done=false
+→ log: "[PARTIAL] CPU reduced — but errors unchanged. Root cause lies elsewhere."
+
+POST /step  {"action_type": "restart_service", "target_service": "auth"}
+→ auth root cause cleared        ← db_connection_pool_exhausted fixed
+→ payments errors cascade-clear  ← victim recovers once root cause is gone
+→ reward=0.87  done=true  success=true
+```
+
+**Lesson:** The first action produced a convincing partial result. A greedy or shallow agent stops there. A reasoning agent reads the logs, correlates auth's connection pool warning, and acts on the root cause.
+
+---
 
 ## 🏆 What Makes This Strong (Judge Summary)
 
@@ -44,7 +92,7 @@ Most AIOps benchmarks rely on synthetic data with no causal structure. This envi
 |---|---|
 | **Deterministic** | Same action sequence always produces identical rewards, states, and logs |
 | **Partially Observable** | Root causes are hidden — agents must reason from indirect metrics |
-| **Deceptive Task** | Hard task has a misleading "healthy" service hiding the actual root cause |
+| **Deceptive Task** | Hard task has a quiet service hiding the actual root cause behind a noisy cascade victim |
 | **Cascading Failures** | Auth degradation propagates to Payments, testing multi-service reasoning |
 | **Partial Recovery** | `escalate` and wrong restarts reduce metrics but don't resolve; agents must continue |
 | **Reward Design** | Bounded `[0.05, 1.0]`, correct 2-step optimal path = 1.0, wrong actions = measurable penalty |
@@ -52,6 +100,7 @@ Most AIOps benchmarks rely on synthetic data with no causal structure. This envi
 | **OpenEnv-Compatible** | Standard `/reset`, `/step`, `/state`, `/health`, Pydantic schemas, 422 on bad input |
 
 ---
+
 
 ## ⚙️ Tech Stack
 
