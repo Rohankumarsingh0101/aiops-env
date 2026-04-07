@@ -38,7 +38,7 @@ def get_task_medium() -> EnvState:
             ),
             ServiceName.payments: ServiceState(
                 status=ServiceStatus.degraded,
-                metrics=ServiceMetrics(cpu=80.0, memory=50.0, errors=50),
+                metrics=ServiceMetrics(cpu=55.0, memory=50.0, errors=50),
             ),
             ServiceName.search: ServiceState(
                 status=ServiceStatus.healthy,
@@ -50,8 +50,10 @@ def get_task_medium() -> EnvState:
         steps_taken=0,
         resolved=False,
         logs=[
-            "Auth latency spike + memory 98% \u2014 possible memory leak",
-            "Payments reporting elevated error rate. Possible cascade."
+            "CRITICAL: Auth memory at 98% — memory_leak signature detected.",
+            "Auth is the upstream dependency for Payments service.",
+            "Payments elevated errors are downstream of Auth degradation.",
+            "Recommended: resolve Auth first, then clear Payments cascade.",
         ]
     )
 

@@ -1,6 +1,6 @@
 """
 OpenEnv Inference Script — Autonomous Incident Commander (AIOps Environment)
-Hybrid Agent v2: cascade-aware rule engine + context-rich LLM reasoning.
+Hybrid Agent v3: early cascade-triggered LLM + deterministic rule fallback.
 
 Required env vars:
   API_BASE_URL  — base URL of the OpenAI-compatible API
@@ -42,114 +42,56 @@ def env_step(action_type: str, target_service: str) -> dict:
     r.raise_for_status()
     return r.json()
 
-# ── Cascade Detection ─────────────────────────────────────────────────────────
-def detect_cascade_suspect(obs: dict) -> str | None:
+# ── Early Cascade Detection ───────────────────────────────────────────────────
+def should_use_llm(obs: dict, history: list[dict]) -> bool:
     """
-    Heuristic: if the loudest service has very high errors but its logs 
-    or another service's logs mention a different service, that other 
-    service is likely the root cause.
+    Return True immediately if cascade ambiguity is detected, OR if an
+    action has been repeated 2+ times (loop guard).
 
-    Checks for:
-    1. Log cross-references — logs mention a different service than the max-error one.
-    2. Discrepancy — service has very high errors but its own CPU/memory are not extreme
-       (suggesting it's reacting to an upstream failure, not causing one).
+    Cascade signals:
+    1. Highest-error service has moderate CPU (<90) AND memory (<90)
+       → high errors without extreme resource pressure = likely victim.
+    2. Logs mention a DIFFERENT service than the highest-error one.
+    3. Multiple services have non-zero errors simultaneously.
     """
     services = obs.get("services", {})
     logs     = obs.get("logs", [])
     if not services:
-        return None
+        return False
 
-    # Loudest visible service (most errors)
-    loudest = max(services, key=lambda s: services[s].get("metrics", {}).get("errors", 0))
-    loudest_metrics = services[loudest].get("metrics", {})
-
-    # Discrepancy check: high errors but CPU and memory are moderate
-    high_errors    = loudest_metrics.get("errors", 0) > 50
-    moderate_cpu   = loudest_metrics.get("cpu", 0) < 70
-    moderate_mem   = loudest_metrics.get("memory", 0) < 80
-    looks_like_victim = high_errors and moderate_cpu and moderate_mem
-
-    # Log cross-reference: find mentions of OTHER services in the logs
-    logs_text = " ".join(logs).lower()
-    for svc in SERVICES:
-        if svc != loudest and svc in logs_text:
-            if looks_like_victim:
-                return svc   # Another service is mentioned AND loudest looks like victim
-
-    # Also: if another service is degraded with fewer errors, it may hold the root cause
-    for svc, data in services.items():
-        if svc == loudest:
-            continue
-        if data.get("status") in ("degraded", "down"):
-            if data.get("metrics", {}).get("errors", 0) > 0:
-                return svc
-
-    return None
-
-
-# ── Rule Engine ───────────────────────────────────────────────────────────────
-def rule_action(obs: dict, history: list[dict], force_llm: bool) -> tuple[str, str, str]:
-    """
-    Returns (action_type, target_service, source).
-    source is one of: 'rules', 'cascade', 'diversity', 'llm'.
-    """
-    services = obs.get("services", {})
-
-    # Build repeat counters from history
+    # Loop guard: repeated action → force LLM
     action_counts: dict[str, int] = {}
     for h in history:
         key = f"{h['action']}/{h['service']}"
         action_counts[key] = action_counts.get(key, 0) + 1
+    if any(v >= 2 for v in action_counts.values()):
+        return True
 
-    # Check if any action has been repeated 2+ times → force LLM
-    if any(v >= 2 for v in action_counts.values()) or force_llm:
-        return (*llm_action(obs, history), "llm")
-
-    # Cascade detection: is the loudest service actually a victim?
-    cascade_suspect = detect_cascade_suspect(obs)
-    if cascade_suspect:
-        svc_data = services.get(cascade_suspect, {})
-        metrics  = svc_data.get("metrics", {})
-        # Choose action for the suspected root-cause service
-        if metrics.get("memory", 0) > 70 or metrics.get("cpu", 0) > 50:
-            return "restart_service", cascade_suspect, "cascade"
-        return "run_diagnostics", cascade_suspect, "cascade"
-
-    # Standard metric-based rules on highest-error service
     loudest = max(services, key=lambda s: services[s].get("metrics", {}).get("errors", 0))
-    metrics = services[loudest].get("metrics", {})
-    cpu    = metrics.get("cpu", 0)
-    memory = metrics.get("memory", 0)
-    errors = metrics.get("errors", 0)
+    m       = services[loudest].get("metrics", {})
 
-    last_action = history[-1]["action"] if history else None
-    last_svc    = history[-1]["service"] if history else None
+    # Signal 1: high errors but moderate resource pressure
+    if m.get("errors", 0) > 30 and m.get("cpu", 0) < 90 and m.get("memory", 0) < 90:
+        return True
 
-    if errors > 100:
-        action = "escalate"
-    elif memory > 90:
-        action = "restart_service"
-    elif cpu > 85:
-        action = "scale_up"
-    else:
-        action = "run_diagnostics" if last_action != "run_diagnostics" else "restart_service"
+    # Signal 2: logs mention a different service
+    logs_text = " ".join(logs).lower()
+    for svc in SERVICES:
+        if svc != loudest and svc in logs_text:
+            return True
 
-    # Action diversity guard: if we're repeating same action/service, try something different
-    proposed_key = f"{action}/{loudest}"
-    if action_counts.get(proposed_key, 0) >= 1:
-        alternatives = [s for s in SERVICES if s != loudest]
-        # Pick the next highest-error service
-        alt_svc = max(alternatives, key=lambda s: services.get(s, {}).get("metrics", {}).get("errors", 0))
-        return "run_diagnostics", alt_svc, "diversity"
+    # Signal 3: multiple services have non-zero errors
+    errored = [s for s in services if services[s].get("metrics", {}).get("errors", 0) > 0]
+    if len(errored) > 1:
+        return True
 
-    return action, loudest, "rules"
-
+    return False
 
 # ── LLM Reasoning ─────────────────────────────────────────────────────────────
 def llm_action(obs: dict, history: list[dict]) -> tuple[str, str]:
     """
-    Context-rich LLM prompt. Includes full history, explicit cascade reasoning,
-    and instruction to respond with action_type/service only.
+    SRE-focused prompt instructing the LLM to reason about root cause vs symptom.
+    Returns (action_type, target_service).
     """
     services = obs.get("services", {})
     logs     = obs.get("logs", [])
@@ -162,54 +104,94 @@ def llm_action(obs: dict, history: list[dict]) -> tuple[str, str]:
             f"cpu={m.get('cpu')}%  memory={m.get('memory')}%  errors={m.get('errors')}"
         )
 
-    history_lines = []
-    for i, h in enumerate(history, 1):
-        history_lines.append(f"  Step {i}: {h['action']} on {h['service']} → reward={h['reward']}")
+    history_lines = [
+        f"  Step {i + 1}: {h['action']} on {h['service']} → reward={h['reward']}"
+        for i, h in enumerate(history)
+    ]
 
     prompt = f"""You are an SRE diagnosing a production outage.
 
-Rules:
-- High errors may be a symptom, not the root cause
-- Cascading failures are common: auth issues often cause payments failures  
-- Do not repeatedly act on the same service unless you are certain it is the root cause
-- run_diagnostics reveals hidden root causes but does not fix anything
-- restart_service fixes memory_leak, cpu_spike, and db_connection_pool issues
-- scale_up fixes cpu_spike only
+Important:
+* The service with the most errors may NOT be the root cause.
+* Cascading failures are common in distributed systems.
+* Identify the ROOT CAUSE, not just the loudest symptom.
+* restart_service fixes: memory_leak, cpu_spike, db_connection_pool_exhausted
+* scale_up fixes: cpu_spike only
+* run_diagnostics: reveals root cause in logs, does NOT fix anything (use only once)
+* escalate: partial relief only, does NOT resolve the incident
 
-Current system state:
+System state:
 {chr(10).join(svc_lines)}
 
 Recent logs:
 {chr(10).join(f'  {l}' for l in logs[-6:])}
 
 Actions taken so far:
-{chr(10).join(history_lines) if history_lines else '  None'}
+{chr(10).join(history_lines) if history_lines else '  None yet'}
 
-Question: Is the service with the most errors the ROOT CAUSE or a DOWNSTREAM SYMPTOM?
-If symptom, target the service mentioned in logs or the degraded service with fewer errors.
-If root cause, act on it directly.
+Think:
+1. Which service is the root cause vs downstream victim?
+2. What is the most efficient next action?
 
-Respond with ONLY this JSON (no explanation):
-{{"action_type": "<restart_service|scale_up|run_diagnostics|escalate|ignore>", "target_service": "<auth|payments|search>"}}"""
+Respond ONLY in this exact format (no explanation, no JSON):
+<action_type>/<service>
+
+Example: restart_service/auth"""
 
     try:
         resp = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
-            max_tokens=80,
+            max_tokens=20,
         )
-        text = resp.choices[0].message.content.strip()
-        if text.startswith("```"):
-            text = text.split("```")[1].lstrip("json").strip()
-        parsed = json.loads(text)
-        return parsed["action_type"], parsed["target_service"]
+        text = resp.choices[0].message.content.strip().lower()
+        # Strip markdown fences, quotes, extra whitespace
+        text = text.split("\n")[0].strip("`").strip('"').strip("'").strip()
+        # Expected format: action_type/service  e.g. "restart_service/auth"
+        if "/" in text:
+            parts = text.split("/")
+            action = parts[0].strip()
+            service = parts[1].strip().split()[0]  # take first word in case of trailing text
+            valid_actions  = {"restart_service", "scale_up", "run_diagnostics", "escalate", "ignore"}
+            valid_services = {"auth", "payments", "search"}
+            if action in valid_actions and service in valid_services:
+                return action, service
     except Exception:
-        # Safe fallback: diagnose the quietest non-healthy service
-        for svc, data in services.items():
-            if data.get("status") != "healthy":
-                return "run_diagnostics", svc
-        return "run_diagnostics", "auth"
+        pass
+
+    # Fallback: target the degraded service with the most errors (most likely root cause)
+    candidates = [
+        (svc, data) for svc, data in services.items()
+        if data.get("status") != "healthy"
+    ]
+    if candidates:
+        root_suspect = max(candidates, key=lambda x: x[1].get("metrics", {}).get("errors", 0))
+        return "restart_service", root_suspect[0]
+    return "run_diagnostics", "auth"
+
+
+
+# ── Rule Engine ───────────────────────────────────────────────────────────────
+def rule_action(obs: dict, history: list[dict]) -> tuple[str, str]:
+    """
+    Deterministic metric-based rules for clear-cut cases only.
+    Used when there is NO cascade ambiguity.
+    """
+    services  = obs.get("services", {})
+    loudest   = max(services, key=lambda s: services[s].get("metrics", {}).get("errors", 0))
+    m         = services[loudest].get("metrics", {})
+    last_act  = history[-1]["action"] if history else None
+
+    if m.get("memory", 0) > 90:
+        return "restart_service", loudest
+    if m.get("cpu", 0) > 85:
+        return "scale_up", loudest
+    if m.get("errors", 0) > 100:
+        return "escalate", loudest
+    if last_act != "run_diagnostics":
+        return "run_diagnostics", loudest
+    return "restart_service", loudest
 
 
 # ── Task Runner ───────────────────────────────────────────────────────────────
@@ -219,21 +201,21 @@ def run_task(task_id: str) -> dict:
     step    = 0
     score   = 0.0
     rewards = []
-    history: list[dict] = []   # [{action, service, reward}]
+    history: list[dict] = []
 
     print(f"[START] task={task_id} env={ENV_NAME} model={MODEL_NAME}")
 
     while not done and step < MAX_STEPS:
-        # Determine if we need to force LLM (same action repeated 2x)
-        action_counts: dict[str, int] = {}
-        for h in history:
-            key = f"{h['action']}/{h['service']}"
-            action_counts[key] = action_counts.get(key, 0) + 1
-        force_llm = any(v >= 2 for v in action_counts.values())
+        use_llm = should_use_llm(obs, history)
 
-        action_type, target_service, source = rule_action(obs, history, force_llm)
+        if use_llm:
+            action_type, target_service = llm_action(obs, history)
+            source = "llm"
+        else:
+            action_type, target_service = rule_action(obs, history)
+            source = "rules"
+
         error_flag = "none"
-
         try:
             result = env_step(action_type, target_service)
         except Exception as e:
@@ -250,7 +232,6 @@ def run_task(task_id: str) -> dict:
         step  += 1
         score += reward
         rewards.append(round(reward, 2))
-
         history.append({"action": action_type, "service": target_service, "reward": round(reward, 2)})
 
         print(
