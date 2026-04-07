@@ -12,8 +12,8 @@ POST /reset   { "task_id": "easy" }
 ```
 **Expected:**
 - `search` status = `degraded`, cpu = 95, errors = 50
-- `auth` and `payments` status = `healthy`
-- logs contains "High CPU usage detected on search service"
+- `auth` and `payments` status = `healthy`, errors = 0
+- logs contains `"Search CPU at 95% — likely scaling bottleneck"`
 
 ---
 
@@ -33,9 +33,9 @@ POST /step   { "action_type": "scale_up", "target_service": "search" }
 POST /step   { "action_type": "ignore", "target_service": "auth" }
 ```
 **Expected:**
-- reward decreases due to wrong-service and ignore penalties
-- warning log: "Targeted auth, but search is more critical" (or similar)
-- done = true (step 2 reached with all healthy — min threshold met)
+- reward decreases due to wrong-service (`ignore` targets auth not search) and ignore penalties
+- log includes: `"Warning: Targeted auth, but payments is more critical"` (or similar)
+- done = true (step 2 reached, all services healthy — minimum threshold met)
 
 ---
 
@@ -54,9 +54,10 @@ reset → scale_up search → restart_service search
 POST /reset   { "task_id": "medium" }
 ```
 **Expected:**
-- `auth` degraded (memory=98, errors=100), root_cause=memory_leak
-- `payments` degraded (cpu=80, errors=50)
-- `search` healthy
+- `auth` degraded (memory=98, errors=100), root_cause=`memory_leak`
+- `payments` degraded (cpu=80, errors=50), no root_cause (cascade victim)
+- `search` healthy (cpu=30, memory=30, errors=0)
+- logs: `"Auth latency spike + memory 98% — possible memory leak"` + `"Payments reporting elevated error rate."`
 
 ---
 
@@ -124,10 +125,11 @@ POST /step   { "action_type": "run_diagnostics", "target_service": "auth" }
 POST /step   { "action_type": "restart_service", "target_service": "auth" }
 ```
 **Expected:**
-- `auth` root_cause cleared
-- cascaded errors on payments clear
-- done = true
-- reward ≈ 0.7–0.9
+- `auth` root_cause cleared — metrics normalize to cpu=30, memory=30, errors=0
+- cascade on `payments` clears: errors drop toward 0
+- `payments` status becomes `healthy` once errors=0 and no active root causes
+- done = true (3 steps hit, or system fully resolved)
+- reward ≈ 0.4–0.7 (multi-step, non-optimal, but resolved)
 
 ---
 

@@ -38,9 +38,18 @@ Most AIOps benchmarks rely on synthetic data with no causal structure. This envi
 - Implements **realistic cascading failures** (auth degradation flows into payments)
 - Produces **rich signals** for training or evaluating diagnostic LLMs and RL agents
 
-## Why This Environment Is Challenging
+## 🏆 What Makes This Strong (Judge Summary)
 
-This environment includes deceptive signals, cascading failures, and partial recovery effects. Agents must reason across multiple steps rather than applying greedy fixes, making it a realistic simulation of production incident response.
+| Property | Detail |
+|---|---|
+| **Deterministic** | Same action sequence always produces identical rewards, states, and logs |
+| **Partially Observable** | Root causes are hidden — agents must reason from indirect metrics |
+| **Deceptive Task** | Hard task has a misleading "healthy" service hiding the actual root cause |
+| **Cascading Failures** | Auth degradation propagates to Payments, testing multi-service reasoning |
+| **Partial Recovery** | `escalate` and wrong restarts reduce metrics but don't resolve; agents must continue |
+| **Reward Design** | Bounded `[0.05, 1.0]`, correct 2-step optimal path = 1.0, wrong actions = measurable penalty |
+| **Production Realism** | Logs use SRE-style narrative: `[RESOLVED]`, `[PARTIAL]`, `[ESCALATED]`, `[WARN]` tags |
+| **OpenEnv-Compatible** | Standard `/reset`, `/step`, `/state`, `/health`, Pydantic schemas, 422 on bad input |
 
 ---
 

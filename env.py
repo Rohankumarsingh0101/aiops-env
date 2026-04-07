@@ -50,22 +50,23 @@ def apply_action(state: EnvState, action: Action) -> list[str]:
     
     if action.action_type == ActionType.restart_service:
         if target.root_cause in ["memory_leak", "cpu_spike", "db_connection_pool_exhausted"]:
+            original_root_cause = target.root_cause
             target.root_cause = None
             target.status = ServiceStatus.healthy
             target.metrics.cpu = 30.0
             target.metrics.memory = 30.0
             target.metrics.errors = 0
-            new_logs.append(f"Restarted {action.target_service}. Metrics stabilized.")
+            new_logs.append(f"[RESOLVED] Restarted {action.target_service.value}: root cause '{original_root_cause}' fixed. Metrics normalized (cpu=30, mem=30, errors=0).")
         else:
             target.metrics.cpu = 30.0
             target.metrics.memory = 30.0
             active_roots = sum(1 for s in state.services.values() if s.root_cause)
             if active_roots == 0:
                 target.metrics.errors = 0
-                new_logs.append(f"Restarted {action.target_service}. Cascaded errors cleared.")
+                new_logs.append(f"[PARTIAL] Restarted {action.target_service.value}. No active root cause found — cascaded errors cleared.")
             else:
                 target.metrics.errors = int(target.metrics.errors * 0.5)
-                new_logs.append(f"Restarted {action.target_service}. Errors reduced by ~50% (not full reset).")
+                new_logs.append(f"[PARTIAL] Restarted {action.target_service.value}. Errors halved to {target.metrics.errors} — another service holds the root cause.")
             
     elif action.action_type == ActionType.scale_up:
         if target.root_cause == "cpu_spike":
@@ -76,7 +77,7 @@ def apply_action(state: EnvState, action: Action) -> list[str]:
         else:
             # Partial CPU relief but errors remain — deceptive improvement
             target.metrics.cpu = max(20.0, target.metrics.cpu - 50.0)
-            new_logs.append(f"Scaled up {action.target_service}. CPU reduced but errors persisting.")
+            new_logs.append(f"[PARTIAL] Scaled up {action.target_service.value}. CPU reduced to {target.metrics.cpu:.0f}% — but errors unchanged. Root cause lies elsewhere.")
             
     elif action.action_type == ActionType.run_diagnostics:
         # Diagnostics never fix anything — only provide insight
@@ -101,13 +102,13 @@ def apply_action(state: EnvState, action: Action) -> list[str]:
                 new_logs.append(f"Diagnostics on {action.target_service}: Service functioning within normal parameters.")
 
     elif action.action_type == ActionType.ignore:
-        new_logs.append(f"Ignored alerts on {action.target_service}. No action taken.")
+        new_logs.append(f"[WARN] No action taken on {action.target_service.value}. Incident continues to escalate.")
 
     elif action.action_type == ActionType.escalate:
         # Partial relief only — NOT full recovery
         target.metrics.errors = max(0, int(target.metrics.errors * 0.5))
         target.metrics.cpu = max(20.0, target.metrics.cpu * 0.7)
-        new_logs.append(f"Escalated incident to L3 for {action.target_service}. Partial relief applied, monitoring continues.")
+        new_logs.append(f"[ESCALATED] L3 response for {action.target_service.value}: errors={target.metrics.errors}, cpu={target.metrics.cpu:.0f}%. Partial relief only — root cause unresolved.")
 
     return new_logs
 
