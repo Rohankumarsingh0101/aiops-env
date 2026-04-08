@@ -146,18 +146,126 @@ def dashboard():
 
     if not state:
         html = """
-        <html><head><title>AIOps Dashboard</title>
-        <meta http-equiv="refresh" content="5">
-        <style>body{font-family:monospace;background:#0f0f0f;color:#eee;padding:2rem;} h1{color:#f97316;} a{color:#4af;}</style>
+        <html><head><title>AIOps Incident Commander</title>
+        <meta charset="utf-8">
+        <style>
+            * { margin:0; padding:0; box-sizing:border-box; }
+            body { font-family: 'Segoe UI', system-ui, sans-serif; background:#0a0a0f; color:#e2e8f0; min-height:100vh; }
+            .hero { background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%); padding:3rem 2rem 2rem; border-bottom:1px solid #1e293b; }
+            .hero h1 { font-size:2rem; color:#f97316; margin-bottom:0.3rem; }
+            .hero h1 span { color:#60a5fa; }
+            .badge { display:inline-block; background:#1e293b; color:#94a3b8; padding:0.15rem 0.5rem; border-radius:4px; font-size:0.75rem; margin-left:0.5rem; }
+            .badge.ver { color:#22c55e; }
+            .hero p { color:#94a3b8; font-size:0.95rem; max-width:700px; line-height:1.5; margin-top:0.5rem; }
+            .content { max-width:900px; margin:0 auto; padding:2rem; }
+            .grid { display:grid; grid-template-columns:1fr 1fr; gap:1.2rem; margin:1.5rem 0; }
+            .card { background:#111827; border:1px solid #1f2937; border-radius:8px; padding:1.2rem; }
+            .card h3 { color:#f97316; font-size:0.9rem; margin-bottom:0.6rem; letter-spacing:0.5px; text-transform:uppercase; }
+            .card ul { list-style:none; }
+            .card li { padding:0.3rem 0; color:#cbd5e1; font-size:0.85rem; border-bottom:1px solid #1f2937; }
+            .card li:last-child { border:none; }
+            .card li code { color:#60a5fa; background:#0f172a; padding:0.1rem 0.4rem; border-radius:3px; font-size:0.8rem; }
+            .feat { display:flex; gap:0.5rem; align-items:baseline; }
+            .feat .dot { color:#22c55e; font-weight:700; }
+            .diff { display:inline-block; padding:0.15rem 0.5rem; border-radius:12px; font-size:0.7rem; font-weight:600; margin-left:0.3rem; }
+            .diff.easy { background:#064e3b; color:#34d399; }
+            .diff.med  { background:#713f12; color:#fbbf24; }
+            .diff.hard { background:#7f1d1d; color:#f87171; }
+            .actions { display:flex; gap:1rem; margin:1.5rem 0; }
+            .btn { display:inline-block; padding:0.7rem 1.5rem; border-radius:6px; text-decoration:none; font-weight:600; font-size:0.9rem; }
+            .btn.primary { background:#f97316; color:#fff; }
+            .btn.secondary { background:#1e293b; color:#60a5fa; border:1px solid #334155; }
+            .btn:hover { opacity:0.9; }
+            .quick { background:#111827; border:1px solid #1f2937; border-radius:8px; padding:1.2rem; margin:1.5rem 0; }
+            .quick h3 { color:#f97316; font-size:0.9rem; margin-bottom:0.8rem; text-transform:uppercase; letter-spacing:0.5px; }
+            .quick pre { background:#0a0a0f; padding:0.8rem 1rem; border-radius:6px; overflow-x:auto; font-size:0.8rem; color:#a5b4fc; line-height:1.6; }
+            .footer { color:#475569; font-size:0.75rem; text-align:center; padding:1.5rem; border-top:1px solid #1e293b; }
+            .footer a { color:#60a5fa; text-decoration:none; }
+        </style>
         </head><body>
-        <h1>AIOps Incident Commander</h1>
-        <p style="color:#aaa">No active episode.</p>
-        <p><b>Quick Start:</b></p>
-        <ol>
-            <li><code>POST /reset</code> &rarr; <code>{"task_id": "easy" | "medium" | "hard"}</code></li>
-            <li><code>POST /step</code>  &rarr; <code>{"action_type": "...", "target_service": "..."}</code></li>
-        </ol>
-        <p>Or use the <a href="/docs">API Docs</a> below.</p>
+        <div class="hero">
+            <h1>🚨 AIOps <span>Incident Commander</span> <span class="badge ver">v1.1.0</span></h1>
+            <p>A deterministic OpenEnv-compatible reinforcement learning environment where AI agents act as on-call SREs to diagnose and resolve production incidents across distributed microservices.</p>
+        </div>
+        <div class="content">
+            <div class="actions">
+                <a href="/docs" class="btn primary">📄 API Documentation</a>
+                <a href="/tasks" class="btn secondary">📋 View Tasks</a>
+                <a href="/health" class="btn secondary">💚 Health Check</a>
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <h3>🏗️ Environment Features</h3>
+                    <ul>
+                        <li><span class="feat"><span class="dot">✓</span> Cascading failure propagation</span></li>
+                        <li><span class="feat"><span class="dot">✓</span> Partial observability (hidden root cause)</span></li>
+                        <li><span class="feat"><span class="dot">✓</span> Deceptive metrics (symptom vs root cause)</span></li>
+                        <li><span class="feat"><span class="dot">✓</span> Dense reward signal every step</span></li>
+                        <li><span class="feat"><span class="dot">✓</span> Fully deterministic transitions</span></li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3>🎯 Task Difficulty</h3>
+                    <ul>
+                        <li><code>easy</code> <span class="diff easy">EASY</span> — single service CPU spike</li>
+                        <li><code>medium</code> <span class="diff med">MEDIUM</span> — auth→payments cascade</li>
+                        <li><code>hard</code> <span class="diff hard">HARD</span> — deceptive signal conflict</li>
+                    </ul>
+                    <br>
+                    <h3>⚡ Available Actions</h3>
+                    <ul>
+                        <li><code>restart_service</code> — fixes leaks, spikes, db issues</li>
+                        <li><code>scale_up</code> — reduces CPU load</li>
+                        <li><code>run_diagnostics</code> — reveals root cause</li>
+                        <li><code>escalate</code> — partial relief only</li>
+                        <li><code>ignore</code> — no action (penalty)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="quick">
+                <h3>⚡ Quick Start</h3>
+                <pre>
+# 1. Reset environment with a task
+curl -X POST /reset -H "Content-Type: application/json" \\
+     -d '{"task_id": "easy"}'
+
+# 2. Take an action
+curl -X POST /step -H "Content-Type: application/json" \\
+     -d '{"action_type": "scale_up", "target_service": "search"}'
+
+# 3. Check current state
+curl -X GET /state</pre>
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <h3>📡 API Endpoints</h3>
+                    <ul>
+                        <li><code>POST /reset</code> — start a new episode</li>
+                        <li><code>POST /step</code> — take an action</li>
+                        <li><code>GET  /state</code> — full environment state</li>
+                        <li><code>POST /grader</code> — grade a trajectory</li>
+                        <li><code>GET  /tasks</code> — list available tasks</li>
+                        <li><code>GET  /health</code> — liveness probe</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3>🏢 Architecture</h3>
+                    <ul>
+                        <li><span class="feat"><span class="dot">›</span> 3 microservices: auth, payments, search</span></li>
+                        <li><span class="feat"><span class="dot">›</span> Pydantic-typed actions &amp; observations</span></li>
+                        <li><span class="feat"><span class="dot">›</span> Grader with efficiency penalties</span></li>
+                        <li><span class="feat"><span class="dot">›</span> OpenEnv spec compliant</span></li>
+                        <li><span class="feat"><span class="dot">›</span> Docker + HF Spaces deployment</span></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="footer">
+            Autonomous Incident Commander v1.1.0 · OpenEnv Compatible · <a href="/docs">Swagger Docs</a>
+        </div>
         </body></html>
         """
         return HTMLResponse(content=html)
