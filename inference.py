@@ -254,8 +254,8 @@ def run_task(task_id: str) -> dict:
         for svc in obs.get("services", {}).values()
     )
 
-    # Normalize score to [0, 1] as required by OpenEnv spec
-    normalized_score = round(min(1.0, score), 2)
+    # Spec requires score strictly in (0, 1) — never exactly 0.0 or 1.0
+    normalized_score = round(max(0.01, min(0.99, score)), 2)
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(
         f"[END] success={str(success).lower()} steps={step} "

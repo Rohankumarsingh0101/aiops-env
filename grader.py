@@ -15,10 +15,10 @@ def grade(task_id: str, trajectory: List[Dict[str, Any]]) -> float:
     - number of steps taken
     - efficiency and cost of actions used
 
-    Returns score between 0.0 and 1.0.
+    Returns score strictly between 0.0 and 1.0 (exclusive).
     """
     if not trajectory:
-        return 0.0
+        return 0.01
 
     final_step = trajectory[-1].get("response", {})
     final_obs = final_step.get("observation", {})
@@ -68,4 +68,5 @@ def grade(task_id: str, trajectory: List[Dict[str, Any]]) -> float:
     efficiency_score = max(0.0, efficiency_score)
     score += efficiency_score
 
-    return max(0.0, min(1.0, score))
+    # Spec requires score strictly in (0, 1) — never exactly 0.0 or 1.0
+    return max(0.01, min(0.99, score))
