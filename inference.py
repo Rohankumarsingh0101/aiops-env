@@ -15,8 +15,8 @@ import requests
 from openai import OpenAI
 
 # ── Config ────────────────────────────────────────────────────────────────────
-API_BASE_URL = os.environ["API_BASE_URL"]
-MODEL_NAME   = os.environ["MODEL_NAME"]
+API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
+MODEL_NAME   = os.getenv("MODEL_NAME", "gpt-4o")
 HF_TOKEN     = os.environ["HF_TOKEN"]
 ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "https://rs01019989-aiops.hf.space")
 
