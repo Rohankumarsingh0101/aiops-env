@@ -120,11 +120,20 @@ docker build -t aiops_env .
 docker run --rm -p 7860:7860 aiops_env
 ```
 
-### 🐍 Local Setup
+### 🐍 Local Setup (Standard)
 
 ```bash
-pip install fastapi uvicorn pydantic
+pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 7860
+```
+
+### ⚡ Local Setup (uv / OpenEnv Multi-mode)
+
+Since this package is packaged for `openenv` multi-mode deployment, you can also use `uv`:
+
+```bash
+uv sync
+uv run uvicorn server.app:app --host 0.0.0.0 --port 7860
 ```
 
 ---
