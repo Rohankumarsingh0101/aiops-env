@@ -254,10 +254,12 @@ def run_task(task_id: str) -> dict:
         for svc in obs.get("services", {}).values()
     )
 
-    rewards_str = ",".join(str(r) for r in rewards)
+    # Normalize score to [0, 1] as required by OpenEnv spec
+    normalized_score = round(min(1.0, score), 2)
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(
         f"[END] success={str(success).lower()} steps={step} "
-        f"score={round(score, 4)} rewards={rewards_str}"
+        f"score={normalized_score} rewards={rewards_str}"
     )
 
     return {"task_id": task_id, "success": success, "steps": step, "score": score}
