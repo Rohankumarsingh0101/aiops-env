@@ -15,8 +15,9 @@ app = FastAPI(
 )
 env = CommanderEnv()
 
+from typing import Optional
 class ResetRequest(BaseModel):
-    task_id: str
+    task_id: str = "easy"
 
 class GraderRequest(BaseModel):
     task_id: str
@@ -30,9 +31,10 @@ def health_check():
 
 
 @app.post("/reset", response_model=Observation)
-def reset_env(request: ResetRequest):
+def reset_env(request: Optional[ResetRequest] = None):
     try:
-        obs = env.reset(request.task_id)
+        task_id = request.task_id if request and hasattr(request, "task_id") else "easy"
+        obs = env.reset(task_id)
         return obs
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
