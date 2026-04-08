@@ -144,7 +144,9 @@ class CommanderEnv:
             services=obs_services,
             logs=self.state_data.logs.copy(),
             severity=self.state_data.severity,
-            time_elapsed=self.state_data.time_elapsed
+            time_elapsed=self.state_data.time_elapsed,
+            steps_taken=self.state_data.steps_taken,
+            max_steps=self.max_steps
         )
 
     def step(self, action: Action) -> StepResponse:

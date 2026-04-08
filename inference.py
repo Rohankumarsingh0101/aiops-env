@@ -225,7 +225,7 @@ def run_task(task_id: str) -> dict:
             action_type, target_service = rule_action(obs, history)
             source = "rules"
 
-        error_flag = "none"
+        error_flag = "null"
         try:
             result = env_step(action_type, target_service)
         except Exception as e:
@@ -246,7 +246,7 @@ def run_task(task_id: str) -> dict:
 
         print(
             f"[STEP] step={step} action={action_type}/{target_service} "
-            f"reward={round(reward, 2)} done={str(done).lower()} error={error_flag}"
+            f"reward={reward:.2f} done={str(done).lower()} error={error_flag}"
         )
 
     success = done and all(

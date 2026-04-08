@@ -47,6 +47,8 @@ class Observation(BaseModel):
     logs: List[str]
     severity: int
     time_elapsed: int
+    steps_taken: int = 0
+    max_steps: int = 3
 
 class StepResponse(BaseModel):
     observation: Observation
